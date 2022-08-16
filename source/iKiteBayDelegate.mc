@@ -3,8 +3,10 @@ using Toybox.WatchUi as Ui;
 using Toybox.Timer as Timer;
 using Toybox.Application as App;
 using Toybox.System as Sys;
+using Toybox.Time.Gregorian as Greg;
+using Toybox.Time;
 
-class iKitesurfDelegate extends Ui.BehaviorDelegate {
+class iKiteBayDelegate extends Ui.BehaviorDelegate {
     var parentView;
     var timer;
     var spotList = "";    
@@ -21,6 +23,7 @@ class iKitesurfDelegate extends Ui.BehaviorDelegate {
     var lastRequestTime;
     var lastLastUserInteractionTime;
     
+	var tideData = null; // Cached tide data
     var validDataHasBeenReceived = false;
     
     // Set up the callback to the view
@@ -63,21 +66,19 @@ class iKitesurfDelegate extends Ui.BehaviorDelegate {
  		} else {
  			parentView.renderUiWithData("Please enter your iKitesurf\naccount info in \nGarmin Connect App");
  		}
- 		
- 		
-        
     }
 
     // Handle menu button press
     function onMenu() {
-    	//System.println("On Menu");
+    	// System.println("On Menu");
+		parentView.onDisplayModeChange();
         return true;
     }
 
     function onSelect() {
     	//System.println("On Select");
     	userInteractionHappened();
-    	parentView.renderUiWithData("Loading data");
+    	parentView.renderUiWithData("Reloading data");
     	makeRequestForSpotList();
         return true;
     }
@@ -95,6 +96,16 @@ class iKitesurfDelegate extends Ui.BehaviorDelegate {
     	userInteractionHappened();
     	parentView.onPreviousPage();
         return true;
+    }
+
+	function onKey(keyEvent) {
+        // System.println(keyEvent.getKey());
+		// for vivoactive3 right button
+		if (keyEvent.getKey() == Ui.KEY_ENTER) {
+			parentView.onDisplayModeChange();
+        	return true;
+		}
+		return false;
     }
     
     function userInteractionHappened() {
@@ -133,12 +144,12 @@ class iKitesurfDelegate extends Ui.BehaviorDelegate {
     	
     	if(!validDataHasBeenReceived) {
     		// Only show requesting wind data message initially, we don't want it to show up on periodic polling
-    		parentView.renderUiWithData("Requesting wind data");
+    		parentView.renderUiWithData("Requesting data");
     	}
         
         var apiToken = App.getApp().getProperty("apiToken");
         var url = "https://api.weatherflow.com/wxengine/rest/spot/getSpotSetByList?format=json&v=1.3&wf_apikey="+apiKey+"&wf_token="+apiToken+"&uid=356696656686243&profile_id=278808&spot_list="+spotList+"&page=1&units_wind=kts&units_temp=C&units_distance=km&device_id=356696656686243&device_type=Android&device_os=6.0.1&wa_ver=2.5&activity=Kite&spot_types=1,100,101&";
-		System.println("URL: " + url);
+		// System.println("URL: " + url);
         Comm.makeWebRequest(
            url,
             {
@@ -150,10 +161,45 @@ class iKitesurfDelegate extends Ui.BehaviorDelegate {
             method(:onReceiveSpotList)
         );
     }
+
+	function makeRequestForTide() {
+		if (tideData != null) {
+			// tide data won't change, single request is enough
+			return;
+		}
+
+    	lastRequestTime = Sys.getTimer();
+    	
+    	System.println("Executing request for tides");
+		var today = Greg.info(Time.today(), Time.FORMAT_SHORT);
+		// include tomorrow morning data to calculate tide heights in the evening
+		var tomorrow = Greg.info(new Time.Moment(Time.today().value()).add(new Time.Duration(Greg.SECONDS_PER_DAY)), Time.FORMAT_SHORT);
+		var beginTime = Lang.format(
+			"$1$-$2$-$3$+$4$:$5$:$6$",
+			[today.year, today.month.format("%02d"), today.day.format("%02d"), "00", "00", "00" ]
+		);
+		var endTime = Lang.format(
+			"$1$-$2$-$3$+$4$:$5$:$6$",
+			[tomorrow.year, tomorrow.month.format("%02d"), tomorrow.day.format("%02d"), "06", "00", "00" ]
+		);
+
+        var url = "https://ww.windalert.com/cgi-bin/tideJSON?tideSiteName=" + THIRD_AVENUE_TIDE_NAME + "&beginTime=" + beginTime + "&endTime=" + endTime;
+		// System.println("URL: " + url);
+        Comm.makeWebRequest(
+           url,
+            {
+                
+            },
+            {
+                "Content-Type" => Comm.REQUEST_CONTENT_TYPE_URL_ENCODED
+            },
+            method(:onReceiveTideData)
+        );
+    }
     
     function makeRequestForProfile() {
-    	//System.println("Executing request for profile");
-    	parentView.renderUiWithData("Getting favorite spots");
+    	// System.println("Executing request for profile");
+    	// parentView.renderUiWithData("Getting favorite spots");
         
         var apiToken = App.getApp().getProperty("apiToken");
         var profileId = App.getApp().getProperty("profileId");
@@ -173,7 +219,7 @@ class iKitesurfDelegate extends Ui.BehaviorDelegate {
     
     function makeRequestForAuthUser() {
     	//System.println("Authenticating User");
-        parentView.renderUiWithData("Authenticating User");
+        // parentView.renderUiWithData("Authenticating User");
                 
         var username = Application.getApp().getProperty("username");
         var password = Application.getApp().getProperty("password");
@@ -195,7 +241,7 @@ class iKitesurfDelegate extends Ui.BehaviorDelegate {
     
     function makeRequestForGetToken() {
     	//System.println("Requesting new token");
-        parentView.renderUiWithData("Requesting new token");
+        // parentView.renderUiWithData("Requesting new token");
         
         var url = "https://api.weatherflow.com/wxengine/rest/session/getToken?format=json&v=1.3&wf_apikey="+apiKey+"&";
 		//System.println("URL: " + url);
@@ -218,6 +264,7 @@ class iKitesurfDelegate extends Ui.BehaviorDelegate {
     		if(data["status"]["status_code"]==0) {
     			// Success
     			validDataHasBeenReceived = true;
+				data["tide"] = tideData;
     			parentView.renderUiWithData(data);
     		} else if(data["status"]["status_code"]==2) {
     			// Invalid token
@@ -232,6 +279,94 @@ class iKitesurfDelegate extends Ui.BehaviorDelegate {
     	}
         
     }
+
+	// time format: minutes in day 
+	// output format [[]]
+	function calcTideHeights(startMin, endMin, startHeight, endHeight) {
+		var diffMin = (endMin - startMin) / 6;
+		var diffHeight = (endHeight - startHeight) / 12;
+		var deltaHeights = [diffHeight, diffHeight * 2, diffHeight * 3, diffHeight * 3, diffHeight * 2, diffHeight];
+
+		var currMin = startMin;
+		var currHeight = startHeight;
+		var eventMarks;
+		if (startHeight > endHeight) {
+			eventMarks = ["H", "L"];
+		} else {
+			eventMarks = ["L", "H"];
+		}
+		var output = [[currMin, currHeight, eventMarks[0]]];
+		for (var i = 0; i < 5; i++) {
+			currMin += diffMin;
+			currHeight += deltaHeights[i];
+			output.add([currMin, currHeight, null]);
+		}
+		output.add([endMin, endHeight, eventMarks[1]]);
+		return output;
+	}
+	
+	// timeStr = 2022-08-07 2:30 PM PDT
+	// output: minutes in day
+	function parseDateTimeStr(timeStr, hrOffset) {
+		timeStr = timeStr.substring(11, timeStr.length() - 4);
+		var hour = timeStr.substring(0, timeStr.find(":")).toNumber();
+		var min = timeStr.substring(timeStr.find(":") + 1, timeStr.find(" ")).toNumber();
+		if (hour != 12) {
+			hour += hrOffset;
+		}
+		return hour * 60 + min;
+	}
+
+	function isPm(timeStr) {
+		return timeStr.find("PM") != null;
+	}
+
+	function parseTideData(data) {
+		// [ [minOfDay, height, name], ... ]
+		var temp = [];
+		var tideEvents = data["tideEvents"];
+		var minOfDay;
+		var height;
+		var currIsPm = false;
+		var lastIsPm = false;
+		var hrOffset = 0;
+		for (var j = 0; j < tideEvents.size(); j++) {
+			var eventName = tideEvents[j]["eventName"];
+			if (eventName.equals("High Tide") || eventName.equals("Low Tide")) {
+				currIsPm = isPm(tideEvents[j]["dateTime"]);
+				if (currIsPm != lastIsPm) {
+					hrOffset += 12;
+				}
+				minOfDay = parseDateTimeStr(tideEvents[j]["dateTime"], hrOffset);
+				height = tideEvents[j]["eventValue"].substring(0, tideEvents[j]["eventValue"].find(" ")).toFloat();
+				temp.add([minOfDay, height]);
+				lastIsPm = currIsPm;
+			}
+		}
+
+		var output = [];
+		for (var j = 0; j < temp.size() - 1; j++) {
+			var periodHeights = calcTideHeights(temp[j][0], temp[j+1][0], temp[j][1], temp[j+1][1]);
+			if (j != 0) {
+				// remove the duplicated start point
+				periodHeights = periodHeights.slice(1, null);
+			}
+			output.addAll(periodHeights);
+		}
+		return output;
+	}
+
+	function onReceiveTideData(responseCode, data) {
+    	if(responseCode == 200) {
+    		// System.println("Received tide data: " + data);
+			tideData = parseTideData(data);
+			System.println("Parsed tide data: " + tideData);
+			makeRequestForSpotList();
+    	} else {
+    		parentView.renderUiWithData("Unable to load data.\nInternet connection required.");
+    	}
+        
+    }
     
     // Receive the data from the web request
     function onReceiveAuthUser(responseCode, data) {
@@ -239,8 +374,6 @@ class iKitesurfDelegate extends Ui.BehaviorDelegate {
     		//System.println("Response: "+data);
     		if(data["status"]["status_code"]==0) {
     			// Successfully received token
-    			parentView.renderUiWithData("Success");
-    			
     			var profileId = data["wf_user"]["active_profile_id"];
     			App.getApp().setProperty("profileId",profileId);
     			//System.println("Received profileId: "+profileId);   
@@ -273,7 +406,7 @@ class iKitesurfDelegate extends Ui.BehaviorDelegate {
     		//System.println("Response: "+data);
     		if(data["status"]["status_code"]==0) {
     			// Successfully received token
-    			parentView.renderUiWithData("Success");
+    			// parentView.renderUiWithData("Success");
  
     			var apiToken = data["wf_token"];
     			App.getApp().setProperty("apiToken",apiToken);
@@ -293,7 +426,7 @@ class iKitesurfDelegate extends Ui.BehaviorDelegate {
     	if(responseCode == 200) {
     		if(data["status"]["status_code"]==0) {
     			// Successfully received token
-    			parentView.renderUiWithData("Success");
+    			parentView.renderUiWithData("Authenticated");
  
     			var favoritesArr = data["profiles"][0]["favorite_spots"];
     			//System.println("favorites arr: "+favoritesArr);
@@ -309,8 +442,8 @@ class iKitesurfDelegate extends Ui.BehaviorDelegate {
     			
     				//System.println("Final spot list: "+spotList);
     			
-    				// Now that we have the list of favorite spots, request the wind data for those
-    				makeRequestForSpotList();
+					// Request for tide data first
+					makeRequestForTide();
     			} else {
     				parentView.renderUiWithData("You need to set up favorite\nspots in your\niKitesurf account.");
     			}

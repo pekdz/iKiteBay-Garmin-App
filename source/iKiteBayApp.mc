@@ -1,6 +1,6 @@
 using Toybox.Application as App;
 
-class iKitesurfApp extends App.AppBase {
+class iKiteBayApp extends App.AppBase {
     hidden var mView;
 
     function initialize() {
@@ -14,8 +14,8 @@ class iKitesurfApp extends App.AppBase {
     }
 
     function getInitialView() {
-        mView = new iKitesurfView();
-        return [mView, new iKitesurfDelegate(mView)];
+        mView = new iKiteBayView();
+        return [mView, new iKiteBayDelegate(mView)];
     }
     
     function onSettingsChanged() {

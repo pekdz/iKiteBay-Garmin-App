@@ -1,4 +1,5 @@
 bin/
 .DS_Store
 source/config.mc
+source/developer_key
 .settings/IQ_IDE.prefs

@@ -6,3 +6,6 @@ var apiKey = "";
 // For debugging on the simulator, put your iKitesurf.com account data here (real users need to enter their credentials in the settings)
 var testUsername = "";
 var testPassword = "";
+
+// Fill the kite spots you want to display 
+var displaySpotList = [THIRD_AVENUE_SPOT, POND_SPOT];
