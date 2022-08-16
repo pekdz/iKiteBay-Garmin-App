@@ -8,7 +8,8 @@ This is designed for SF Bay Area kitesurfers for private usage, only two kite sp
 
 # Demo
 
-![](https://github.com/pekdz/iKiteBay-Garmin-App/raw/master/resources/images/demo.gif)
+<img src="https://github.com/pekdz/iKiteBay-Garmin-App/raw/master/resources/images/demo.gif" height="400"/>
+
 
 # How to install
 

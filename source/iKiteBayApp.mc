@@ -19,8 +19,8 @@ class iKiteBayApp extends App.AppBase {
     }
     
     function onSettingsChanged() {
-    	System.println("Settings changed");
-    	// Invalidate the API token so App has to reauthenticate with possibly new username/password
-    	App.getApp().setProperty("apiToken","");
+        System.println("Settings changed");
+        // Invalidate the API token so App has to reauthenticate with possibly new username/password
+        App.getApp().setProperty("apiToken","");
     }
 }
